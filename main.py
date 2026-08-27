@@ -1,42 +1,50 @@
 import os
-import google.generativeai as genai
+import asyncio
 from pptx import Presentation
 from pptx.util import Inches, Pt
 from pptx.dml.color import RGBColor
 from pptx.enum.text import PP_ALIGN
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, filters, ContextTypes
+from aiohttp import web
+import g4f
 
 TELEGRAM_TOKEN = "8383867623:AAFsI044q7R6Xl44U_z4qWw0nC0K6W3a6yM"
-GEMINI_API_KEY = "AQ.Ab8RN6JpuM_fGI6AmlX0lR_Ij5ngHWy_u-b4p_20qIWrkFPCBA"
 
-# إعداد الربط الرسمي مع Gemini
-genai.configure(api_key=GEMINI_API_KEY)
-model = genai.GenerativeModel("gemini-1.5-flash")
-
-def generate_gemini_content(prompt: str) -> str:
-    response = model.generate_content(prompt)
-    return response.text
+# دالة توليد المحتوى الذكي بدون مفاتيح API
+def generate_ai_content(prompt: str) -> str:
+    try:
+        response = g4f.ChatCompletion.create(
+            model=g4f.models.gpt_4o_mini,
+            messages=[{"role": "user", "content": prompt}],
+        )
+        return str(response)
+    except Exception:
+        # خيار بديل في حال تعثر النموذج الأول
+        response = g4f.ChatCompletion.create(
+            model=g4f.models.default,
+            messages=[{"role": "user", "content": prompt}],
+        )
+        return str(response)
 
 def create_powerpoint_presentation(topic: str, output_path: str):
     prompt = (
-        f"أنشئ محتوى عرض تقديمي احترافي باللغة العربية حول: '{topic}'. "
-        f"يجب أن يتكون العرض من 4 إلى 5 شرائح على النحو التالي:\n"
-        f"شريحة 1: شريحة العنوان والمقدمة المختصرة\n"
-        f"شريحة 2: المحاور الرئيسية أو الأهمية\n"
-        f"شريحة 3: التفاصيل والشرح العملي\n"
-        f"شريحة 4: التوصيات أو الخاتمة\n\n"
-        f"التنسيق المطلوب بدقة تامة:\n"
-        f"اكتب كل شريحة بالصيغة الآتية حصراً:\n"
+        f"أنشئ محتوى عرض تقديمي احترافي باللغة العربية حول: '{topic}'.\n"
+        f"يجب أن يتكون العرض من 4 شرائح على النحو التالي:\n"
+        f"شريحة 1: المقدمة والعنوان\n"
+        f"شريحة 2: المحاور الرئيسية والأهمية\n"
+        f"شريحة 3: التفاصيل والتطبيق العملي\n"
+        f"شريحة 4: التوصيات والخاتمة\n\n"
+        f"التنسيق المطلوب إلزامي ودقيق جداً:\n"
         f"---SLIDE---\n"
-        f"TITLE: [عنوان الشريحة هنا]\n"
+        f"TITLE: [عنوان الشريحة]\n"
         f"CONTENT:\n"
         f"- [نقطة 1]\n"
         f"- [نقطة 2]\n"
         f"- [نقطة 3]"
     )
 
-    ai_text = generate_gemini_content(prompt)
+    ai_text = generate_ai_content(prompt)
 
     prs = Presentation()
     prs.slide_width = Inches(13.333)
@@ -61,7 +69,7 @@ def create_powerpoint_presentation(topic: str, output_path: str):
             elif "CONTENT:" in line_str:
                 content_started = True
             elif content_started and line_str:
-                clean_point = line_str.lstrip("-*• ").strip()
+                clean_point = line_str.lstrip("-*• 1234567890.").strip()
                 if clean_point:
                     points.append(clean_point)
                     
@@ -79,7 +87,7 @@ def create_powerpoint_presentation(topic: str, output_path: str):
         p_title.font.bold = True
         p_title.font.color.rgb = RGBColor(24, 76, 120)
 
-        # نقاط المحتوى
+        # محتوى الشريحة
         content_box = slide.shapes.add_textbox(Inches(1.0), Inches(2.2), Inches(11.333), Inches(4.5))
         tf_content = content_box.text_frame
         tf_content.word_wrap = True
@@ -141,7 +149,7 @@ async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     current_service = context.user_data.get("current_service", "general")
     service_name = context.user_data.get("service_name", "طلب عام")
 
-    status_msg = await update.message.reply_text("⏳ جارٍ العمل على طلبك ومعالجة البيانات...")
+    status_msg = await update.message.reply_text("⏳ جارٍ العمل على طلبك ومعالجة البيانات بالذكاء الاصطناعي...")
 
     try:
         if current_service == "ppt":
@@ -164,7 +172,7 @@ async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 f"المطلوب: قم بإعداد المحتوى الآتي بأعلى جودة واحترافية وباللغة العربية، مع التنسيق الأكاديمي الدقيق:\n\n"
                 f"{user_text}"
             )
-            result = generate_gemini_content(prompt)
+            result = generate_ai_content(prompt)
             
             if len(result) > 4000:
                 for i in range(0, len(result), 4000):
@@ -177,14 +185,37 @@ async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         await status_msg.edit_text(f"⚠️ حدث خطأ: {str(e)}")
 
-def main():
+# خادم وهمي لإبقاء Render يعمل باستمرار دون توقف
+async def handle_ping(request):
+    return web.Response(text="Bot is running live 24/7!")
+
+async def start_web_server():
+    server = web.Application()
+    server.router.add_get("/", handle_ping)
+    runner = web.AppRunner(server)
+    await runner.setup()
+    port = int(os.environ.get("PORT", 10000))
+    site = web.TCPSite(runner, "0.0.0.0", port)
+    await site.start()
+
+async def main_async():
+    await start_web_server()
     app = Application.builder().token(TELEGRAM_TOKEN).build()
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CallbackQueryHandler(button_handler))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, text_handler))
     
     print("البوت يعمل بنجاح...")
-    app.run_polling()
+    await app.initialize()
+    await app.start()
+    await app.updater.start_polling()
+    
+    # إبقاء السيرفر يعمل بشكل دائم
+    while True:
+        await asyncio.sleep(3600)
+
+def main():
+    asyncio.run(main_async())
 
 if __name__ == "__main__":
     main()
