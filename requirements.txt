@@ -3,3 +3,4 @@ python-pptx
 aiohttp
 requests
 Pillow
+python-docx
