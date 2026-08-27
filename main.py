@@ -1,230 +1,190 @@
-import json
-import logging
 import os
+import google.generativeai as genai
 from pptx import Presentation
-from pptx.util import Pt
-import requests
-from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
-from telegram.ext import (
-    ApplicationBuilder,
-    CallbackQueryHandler,
-    CommandHandler,
-    ContextTypes,
-    MessageHandler,
-    filters,
-)
+from pptx.util import Inches, Pt
+from pptx.dml.color import RGBColor
+from pptx.enum.text import PP_ALIGN
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, filters, ContextTypes
 
-# ----------------- الإعدادات -----------------
-TELEGRAM_BOT_TOKEN = "8867458917:AAEyVQ0Vn97bEfZbANtsFRxMxeJxnbdJ0s4"
-GEMINI_API_KEY = "AQ.Ab8RN6LOZVx1Re_-xU0Uo_cLpfg1pDcg1muqRIEERFEZX4p8WQ"
-ADMIN_ID = 578187098
+TELEGRAM_TOKEN = "8383867623:AAFsI044q7R6Xl44U_z4qWw0nC0K6W3a6yM"
+GEMINI_API_KEY = "AQ.Ab8RN6JpuM_fGI6AmlX0lR_Ij5ngHWy_u-b4p_20qIWrkFPCBA"
 
-logging.basicConfig(
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-    level=logging.INFO,
-)
+# إعداد الربط الرسمي مع Gemini
+genai.configure(api_key=GEMINI_API_KEY)
+model = genai.GenerativeModel("gemini-1.5-flash")
 
-USER_MODES = {}
+def generate_gemini_content(prompt: str) -> str:
+    response = model.generate_content(prompt)
+    return response.text
 
-
-# ----------------- استدعاء Gemini -----------------
-def call_gemini(
-    prompt: str, model_name: str = "gemini-1.5-flash", json_mode: bool = False
-) -> str:
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent?key={GEMINI_API_KEY}"
-    headers = {"Content-Type": "application/json"}
-    payload = {"contents": [{"parts": [{"text": prompt}]}]}
-
-    if json_mode:
-        payload["generationConfig"] = {
-            "response_mime_type": "application/json"
-        }
-
-    response = requests.post(url, headers=headers, json=payload, timeout=90)
-    response_data = response.json()
-
-    if "error" in response_data:
-        raise Exception(response_data["error"].get("message", "خطأ في API"))
-
-    return response_data["candidates"][0]["content"]["parts"][0]["text"]
-
-
-# ----------------- توليد ملف البوربوينت -----------------
-def generate_ppt_file(topic: str, filename: str = "presentation.pptx") -> str:
-    prompt = f"""
-    قم بإنشاء محتوى عرض تقديمي تفصيلي واحترافي باللغة العربية عن: "{topic}".
-    يجب أن يكون الإخراج بصيغة JSON فقط كقائمة شرائح:
-    [
-      {{"title": "عنوان الشريحة", "points": ["نقطة 1", "نقطة 2", "نقطة 3"]}}
-    ]
-    """
-    raw_text = call_gemini(
-        prompt, model_name="gemini-1.5-flash", json_mode=True
+def create_powerpoint_presentation(topic: str, output_path: str):
+    prompt = (
+        f"أنشئ محتوى عرض تقديمي احترافي باللغة العربية حول: '{topic}'. "
+        f"يجب أن يتكون العرض من 4 إلى 5 شرائح على النحو التالي:\n"
+        f"شريحة 1: شريحة العنوان والمقدمة المختصرة\n"
+        f"شريحة 2: المحاور الرئيسية أو الأهمية\n"
+        f"شريحة 3: التفاصيل والشرح العملي\n"
+        f"شريحة 4: التوصيات أو الخاتمة\n\n"
+        f"التنسيق المطلوب بدقة تامة:\n"
+        f"اكتب كل شريحة بالصيغة الآتية حصراً:\n"
+        f"---SLIDE---\n"
+        f"TITLE: [عنوان الشريحة هنا]\n"
+        f"CONTENT:\n"
+        f"- [نقطة 1]\n"
+        f"- [نقطة 2]\n"
+        f"- [نقطة 3]"
     )
-    slides_data = json.loads(raw_text)
+
+    ai_text = generate_gemini_content(prompt)
 
     prs = Presentation()
-    for slide_data in slides_data:
-        slide = prs.slides.add_slide(prs.slide_layouts[1])
-        slide.shapes.title.text = slide_data.get("title", "")
-        tf = slide.shapes.placeholders[1].text_frame
-        tf.clear()
-        for i, point in enumerate(slide_data.get("points", [])):
-            p = tf.paragraphs[0] if i == 0 else tf.add_paragraph()
-            p.text = str(point)
-            p.font.size = Pt(16)
+    prs.slide_width = Inches(13.333)
+    prs.slide_height = Inches(7.5)
 
-    prs.save(filename)
-    return filename
+    slides_raw = ai_text.split("---SLIDE---")
+    
+    for raw in slides_raw:
+        if not raw.strip():
+            continue
+            
+        title_text = ""
+        points = []
+        
+        lines = raw.strip().split("\n")
+        content_started = False
+        
+        for line in lines:
+            line_str = line.strip()
+            if line_str.startswith("TITLE:"):
+                title_text = line_str.replace("TITLE:", "").strip()
+            elif "CONTENT:" in line_str:
+                content_started = True
+            elif content_started and line_str:
+                clean_point = line_str.lstrip("-*• ").strip()
+                if clean_point:
+                    points.append(clean_point)
+                    
+        blank_slide_layout = prs.slide_layouts[6]
+        slide = prs.slides.add_slide(blank_slide_layout)
 
+        # عنوان الشريحة
+        title_box = slide.shapes.add_textbox(Inches(1.0), Inches(0.8), Inches(11.333), Inches(1.2))
+        tf_title = title_box.text_frame
+        tf_title.word_wrap = True
+        p_title = tf_title.paragraphs[0]
+        p_title.text = title_text if title_text else topic
+        p_title.alignment = PP_ALIGN.RIGHT
+        p_title.font.size = Pt(36)
+        p_title.font.bold = True
+        p_title.font.color.rgb = RGBColor(24, 76, 120)
 
-# ----------------- القوائم -----------------
-def get_main_menu():
-    keyboard = [
-        [
-            InlineKeyboardButton(
-                "📊 تصميم عرض بوربوينت", callback_data="mode_ppt"
-            )
-        ],
-        [
-            InlineKeyboardButton(
-                "🎓 إعداد بحث جامعي متكامل", callback_data="mode_research"
-            )
-        ],
-        [
-            InlineKeyboardButton(
-                "👨‍🏫 تحضير دروس وخطط تعليمية", callback_data="mode_teacher"
-            )
-        ],
-        [
-            InlineKeyboardButton(
-                "📚 بحوث وتقارير مدرسية", callback_data="mode_school"
-            )
-        ],
-        [
-            InlineKeyboardButton(
-                "📝 تلخيص كتب ومذكرات", callback_data="mode_summary"
-            )
-        ],
-        [
-            InlineKeyboardButton(
-                "💡 حل وشرح الواجبات والمسائل", callback_data="mode_homework"
-            )
-        ],
-    ]
-    return InlineKeyboardMarkup(keyboard)
+        # نقاط المحتوى
+        content_box = slide.shapes.add_textbox(Inches(1.0), Inches(2.2), Inches(11.333), Inches(4.5))
+        tf_content = content_box.text_frame
+        tf_content.word_wrap = True
 
+        for idx, pt in enumerate(points):
+            p = tf_content.paragraphs[0] if idx == 0 else tf_content.add_paragraph()
+            p.text = f"• {pt}"
+            p.alignment = PP_ALIGN.RIGHT
+            p.font.size = Pt(22)
+            p.font.color.rgb = RGBColor(50, 50, 50)
+            p.space_after = Pt(14)
+
+    prs.save(output_path)
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    welcome_text = (
-        "👋 **أهلاً بك في منصة الخدمات الأكاديمية والتعليمية**\n\n"
-        "اختر الخدمة المطلوبة من القائمة:"
-    )
-    await update.message.reply_text(
-        welcome_text, reply_markup=get_main_menu(), parse_mode="Markdown"
-    )
-
+    keyboard = [
+        [InlineKeyboardButton("📊 تصميم عرض بوربوينت", callback_data="svc_ppt")],
+        [InlineKeyboardButton("🎓 إعداد بحث جامعي متكامل", callback_data="svc_research")],
+        [InlineKeyboardButton("🧑‍🏫 تحضير دروس وخطط تعليمية", callback_data="svc_lesson")],
+        [InlineKeyboardButton("📚 بحوث وتقارير مدرسية", callback_data="svc_school")],
+        [InlineKeyboardButton("📝 تلخيص كتب ومذكرات", callback_data="svc_summary")],
+        [InlineKeyboardButton("💡 حل وشرح الواجبات والمسائل", callback_data="svc_homework")]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    welcome_text = "👋 أهلاً بك في منصة الخدمات الأكاديمية والتعليمية\n\nاختر الخدمة المطلوبة من القائمة:"
+    
+    if update.message:
+        await update.message.reply_text(welcome_text, reply_markup=reply_markup)
+    elif update.callback_query:
+        await update.callback_query.message.reply_text(welcome_text, reply_markup=reply_markup)
 
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
-    user_id = query.from_user.id
-    mode = query.data
-    USER_MODES[user_id] = mode
-
-    prompts = {
-        "mode_ppt": "📊 أرسل الآن عنوان أو موضوع العرض التقديمي لتوليد الملف فوراً:",
-        "mode_research": "🎓 أرسل موضوع البحث الجامعي بالتفصيل لإعداده منهجياً:",
-        "mode_teacher": "👨‍🏫 أرسل عنوان الدرس والمرحلة الدراسية لتجهيز الخطة:",
-        "mode_school": "📚 أرسل عنوان التقرير أو البحث المدرسي المطلوب:",
-        "mode_summary": "📝 أرسل النص أو الموضوع المراد تلخيصه بنقاط مركزة:",
-        "mode_homework": "💡 أرسل المسألة أو الواجب المطلوب حله خطوة بخطوة:",
+    
+    data = query.data
+    services = {
+        "svc_ppt": ("📊 تصميم عرض بوربوينت", "ppt"),
+        "svc_research": ("🎓 إعداد بحث جامعي متكامل", "research"),
+        "svc_lesson": ("🧑‍🏫 تحضير دروس وخطط تعليمية", "lesson"),
+        "svc_school": ("📚 بحوث وتقارير مدرسية", "school"),
+        "svc_summary": ("📝 تلخيص كتب ومذكرات", "summary"),
+        "svc_homework": ("💡 حل وشرح الواجبات والمسائل", "homework")
     }
-    await query.edit_message_text(prompts.get(mode, "أرسل طلبك الآن:"))
 
-
-# ----------------- معالجة الرسائل -----------------
-async def handle_requests(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.effective_user.id
-    user_name = update.effective_user.full_name
-    user_text = update.message.text
-    mode = USER_MODES.get(user_id, "mode_ppt")
-
-    try:
-        if user_id != ADMIN_ID:
-            await context.bot.send_message(
-                chat_id=ADMIN_ID,
-                text=f"🔔 **طلب جديد**\n👤 المستخدم: {user_name} (`{user_id}`)\n📌 الخدمة: `{mode}`\n📝 الطلب:\n{user_text}",
-                parse_mode="Markdown",
-            )
-    except Exception:
-        pass
-
-    status_msg = await update.message.reply_text(
-        "⏳ جاري معالجة طلبك بواسطة الذكاء الاصطناعي..."
-    )
-
-    try:
-        if mode == "mode_ppt":
-            ppt_file = generate_ppt_file(user_text, f"ppt_{user_id}.pptx")
-            await status_msg.edit_text("✅ تم التجهيز! جاري إرسال الملف...")
-            with open(ppt_file, "rb") as doc:
-                await context.bot.send_document(
-                    chat_id=user_id,
-                    document=doc,
-                    caption=f"📊 عرض بوربوينت: {user_text}",
-                    filename="عرض_تقديمي.pptx",
-                )
+    if data in services:
+        name, code = services[data]
+        context.user_data["current_service"] = code
+        context.user_data["service_name"] = name
+        
+        if code == "ppt":
+            await query.edit_message_text("📊 أرسل الآن عنوان أو موضوع العرض التقديمي لتوليد الملف فوراً:")
         else:
-            prompts_map = {
-                "mode_research": f"أنت باحث أكاديمي متخصص. قم بإعداد بحث جامعي رصين وشامل عن: '{user_text}'. قسّم البحث إلى: مقدمة، مباحث وفروع، خاتمة وتوصيات، ومراجع.",
-                "mode_teacher": f"أنت خبير تربوي. قم بإعداد تحضير درس نموذجي عن: '{user_text}' يشمل الأهداف واستراتيجيات التدريس وخطة الحصة والتقويم.",
-                "mode_school": f"قم بإعداد بحث مدرسي منظم ومبسط عن: '{user_text}'.",
-                "mode_summary": f"قم بتلخيص المحتوى التالي في نقاط واضحة: '{user_text}'",
-                "mode_homework": f"قم بحل المسألة أو الواجب التالي خطوة بخطوة مع الشرح: '{user_text}'",
-            }
-            prompt = prompts_map.get(mode, user_text)
-            result = call_gemini(prompt, model_name="gemini-1.5-flash")
+            await query.edit_message_text(f"✨ خدمة: *{name}*\n\nيرجى كتابة التفاصيل أو إرسال المحتوى وسأقوم بإعداده لك فوراً:", parse_mode="Markdown")
 
+async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_text = update.message.text
+    user = update.effective_user
+    current_service = context.user_data.get("current_service", "general")
+    service_name = context.user_data.get("service_name", "طلب عام")
+
+    status_msg = await update.message.reply_text("⏳ جارٍ العمل على طلبك ومعالجة البيانات...")
+
+    try:
+        if current_service == "ppt":
+            file_name = f"presentation_{user.id}.pptx"
+            create_powerpoint_presentation(user_text, file_name)
+
+            with open(file_name, "rb") as ppt_file:
+                await update.message.reply_document(
+                    document=ppt_file,
+                    filename=f"{user_text[:30]}.pptx",
+                    caption=f"✅ تم إعداد العرض التقديمي بنجاح:\n📌 *{user_text}*",
+                    parse_mode="Markdown"
+                )
+
+            if os.path.exists(file_name):
+                os.remove(file_name)
+        else:
+            prompt = (
+                f"أنت خبير أكاديمي وتعليمي تقدم خدمة: {service_name}.\n"
+                f"المطلوب: قم بإعداد المحتوى الآتي بأعلى جودة واحترافية وباللغة العربية، مع التنسيق الأكاديمي الدقيق:\n\n"
+                f"{user_text}"
+            )
+            result = generate_gemini_content(prompt)
+            
             if len(result) > 4000:
-                for chunk in [
-                    result[i : i + 4000] for i in range(0, len(result), 4000)
-                ]:
-                    await update.message.reply_text(chunk)
+                for i in range(0, len(result), 4000):
+                    await update.message.reply_text(result[i:i+4000])
             else:
                 await update.message.reply_text(result)
 
-            await status_msg.delete()
-
-        await update.message.reply_text(
-            "اختر خدمة أخرى للمتابعة:", reply_markup=get_main_menu()
-        )
+        await status_msg.delete()
 
     except Exception as e:
-        await status_msg.edit_text(f"⚠️ حدث خطأ: {e}")
-
+        await status_msg.edit_text(f"⚠️ حدث خطأ: {str(e)}")
 
 def main():
-    app = (
-        ApplicationBuilder()
-        .token(TELEGRAM_BOT_TOKEN)
-        .connect_timeout(60.0)
-        .read_timeout(60.0)
-        .write_timeout(60.0)
-        .get_updates_connect_timeout(60.0)
-        .get_updates_read_timeout(60.0)
-        .build()
-    )
-
+    app = Application.builder().token(TELEGRAM_TOKEN).build()
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CallbackQueryHandler(button_handler))
-    app.add_handler(
-        MessageHandler(filters.TEXT & ~filters.COMMAND, handle_requests)
-    )
-
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, text_handler))
+    
     print("البوت يعمل بنجاح...")
     app.run_polling()
-
 
 if __name__ == "__main__":
     main()
