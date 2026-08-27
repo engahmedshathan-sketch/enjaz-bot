@@ -4,3 +4,4 @@ aiohttp
 requests
 Pillow
 python-docx
+pypdf
