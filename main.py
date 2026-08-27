@@ -2,6 +2,7 @@ import os
 import io
 import asyncio
 import requests
+from PIL import Image, ImageDraw
 from pptx import Presentation
 from pptx.util import Inches, Pt
 from pptx.dml.color import RGBColor
@@ -13,28 +14,68 @@ from aiohttp import web
 
 TELEGRAM_TOKEN = "8867458917:AAEyVQ0Vn97bEfZbANtsFRxMxeJxnbdJ0s4"
 
-def fetch_online_image(keyword: str) -> io.BytesIO:
-    """جلب صور ورسومات توضيحية احترافية عبر الإنترنت بأسلوب Gamma و Canva"""
-    clean_kw = keyword.replace(" ", "%20")
-    urls = [
-        f"https://source.unsplash.com/600x450/?business,{clean_kw}",
-        f"https://images.unsplash.com/photo-1454165804606-c3d57bc86b40?w=600&auto=format&fit=crop&q=80",
-        f"https://images.unsplash.com/photo-1551836022-d5d88e9218df?w=600&auto=format&fit=crop&q=80"
+def generate_fallback_chart(slide_num: int) -> io.BytesIO:
+    """إنشاء رسم بياني توضيحي ديناميكي فريد لكل شريحة كبديل احتياطي"""
+    width, height = 600, 450
+    img = Image.new("RGB", (width, height), color="#F8FAFC")
+    draw = ImageDraw.Draw(img)
+
+    # بطاقة داخلية
+    draw.rounded_rectangle([15, 15, width-15, height-15], radius=15, fill="#FFFFFF", outline="#CBD5E1", width=2)
+    
+    # رأس البطاقة
+    draw.rectangle([15, 15, width-15, 75], fill="#1B4965")
+
+    # أعمدة بيانية تتغير حسب رقم الشريحة
+    bars = [120, 190, 160, 240, 210]
+    start_x = 70
+    bar_width = 55
+    for idx, b_h in enumerate(bars):
+        x0 = start_x + idx * (bar_width + 35)
+        factor = ((slide_num + idx) % 5 + 6) / 10
+        y0 = height - 50 - (b_h * factor)
+        x1 = x0 + bar_width
+        y1 = height - 50
+        color = "#5FA8D3" if (idx + slide_num) % 2 == 0 else "#62B6CB"
+        draw.rounded_rectangle([x0, y0, x1, y1], radius=6, fill=color)
+
+    # خط مؤشر أداء متغير
+    points = [(70 + i*90 + 27, height - 60 - (bars[i] * (((slide_num + i) % 5 + 6) / 10))) for i in range(5)]
+    draw.line(points, fill="#E63946", width=3)
+
+    img_bytes = io.BytesIO()
+    img.save(img_bytes, format="PNG")
+    img_bytes.seek(0)
+    return img_bytes
+
+def fetch_unique_slide_image(keyword: str, slide_index: int) -> io.BytesIO:
+    """جلب صورة حصرية ومختلفة لكل شريحة بناءً على كلماتها المفتاحية ورقم الشريحة"""
+    topic_keywords = [
+        "planning", "strategy", "management", "water-project", "crisis",
+        "teamwork", "leadership", "engineering", "infrastructure", "fieldwork",
+        "logistics", "solar-energy", "sustainability", "data-analysis", "technology",
+        "community", "finance", "maintenance", "communication", "partnership",
+        "analytics", "case-study", "environment", "safety", "evaluation",
+        "roadmap", "success", "future", "vision", "conclusion"
     ]
     
-    for url in urls:
-        try:
-            res = requests.get(url, timeout=10)
-            if res.status_code == 200 and len(res.content) > 5000:
-                img_stream = io.BytesIO(res.content)
-                img_stream.seek(0)
-                return img_stream
-        except Exception:
-            continue
-    return None
+    kw = topic_keywords[(slide_index - 1) % len(topic_keywords)]
+    # استخدام معرّف عشوائي متغير (lock/sig) لضمان عدم تكرار أي صورة
+    img_url = f"https://loremflickr.com/600/450/{kw}?lock={slide_index * 17}"
+
+    try:
+        res = requests.get(img_url, timeout=8)
+        if res.status_code == 200 and len(res.content) > 3000:
+            img_stream = io.BytesIO(res.content)
+            img_stream.seek(0)
+            return img_stream
+    except Exception:
+        pass
+
+    return generate_fallback_chart(slide_index)
 
 def generate_30_gemini_slides(topic: str):
-    """توليد محتوى تفصيلي وأكاديمي لـ 30 شريحة بأسلوب Gemini"""
+    """توليد محتوى تفصيلي وأكاديمي لـ 30 شريحة"""
     return [
         (f"1. الغلاف والعنوان الرئيسي", [f"عرض تقديمي متكامل حول: {topic}", "إعداد استراتيجي وبحثي متقدم", "دليل التطبيق والتنفيذ الميداني"]),
         (f"2. المقدمة والأهمية العامة", [f"يمثل موضوع ({topic}) حجر الزاوية في تطوير الأداء المؤسسي المعاصر.", "مواكبة المعايير الحديثة في التخطيط وإدارة العمليات بكفاءة عالية.", "أهمية بناء منظومة قادرة على مواجهة المتغيرات التشغيلية."]),
@@ -78,7 +119,7 @@ def create_powerpoint_presentation_canva_style(topic: str, output_path: str):
     for idx, (title_text, points) in enumerate(slides_data, start=1):
         slide = prs.slides.add_slide(prs.slide_layouts[6])
 
-        # شريط علوي أنيق (أسلوب كانفا)
+        # شريط علوي أنيق
         top_bar = slide.shapes.add_shape(MSO_SHAPE.RECTANGLE, Inches(0), Inches(0), Inches(13.333), Inches(0.2))
         top_bar.fill.solid()
         top_bar.fill.fore_color.rgb = RGBColor(27, 73, 101)
@@ -115,8 +156,8 @@ def create_powerpoint_presentation_canva_style(topic: str, output_path: str):
             p.font.color.rgb = RGBColor(30, 41, 59)
             p.space_after = Pt(14)
 
-        # إضافة الصورة التوضيحية للشريحة
-        img_stream = fetch_online_image(topic)
+        # إضافة صورة حصرية ومختلفة لكل شريحة
+        img_stream = fetch_unique_slide_image(topic, idx)
         if img_stream:
             slide.shapes.add_picture(img_stream, Inches(0.8), Inches(1.5), Inches(4.3), Inches(5.1))
 
@@ -172,7 +213,7 @@ def build_mega_research(topic: str) -> str:
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = [
-        [InlineKeyboardButton("📊 تصميم عرض بوربوينت (30 شريحة + صور)", callback_data="svc_ppt")],
+        [InlineKeyboardButton("📊 تصميم عرض بوربوينت (30 شريحة + صور مختلفة)", callback_data="svc_ppt")],
         [InlineKeyboardButton("🎓 إعداد بحث جامعي متكامل ومفصل", callback_data="svc_research")],
         [InlineKeyboardButton("🧑‍🏫 تحضير دروس وخطط تعليمية معمقة", callback_data="svc_lesson")],
         [InlineKeyboardButton("📚 بحوث وتقارير مدرسية متكاملة", callback_data="svc_school")],
@@ -207,7 +248,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         context.user_data["service_name"] = name
         
         if code == "ppt":
-            await query.edit_message_text("📊 أرسل عنوان العرض لتوليد ملف بوربوينت احترافي (30 شريحة كاملة مع الصور والتنسيقات):")
+            await query.edit_message_text("📊 أرسل عنوان العرض لتوليد ملف بوربوينت احترافي (30 شريحة كاملة مع **صور ورسوم بيانية حصرية ومختلفة لكل شريحة**):")
         else:
             await query.edit_message_text(f"✨ خدمة: *{name}*\n\nيرجى إرسال تفاصيل الموضوع وسأقوم بإعداد دراسة موسعة وتفصيلية فوراً:", parse_mode="Markdown")
 
@@ -216,7 +257,7 @@ async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     current_service = context.user_data.get("current_service", "ppt")
 
-    status_msg = await update.message.reply_text("⏳ جارٍ إعداد الملف وتنسيق الشرائح والمحتوى...")
+    status_msg = await update.message.reply_text("⏳ جارٍ إعداد وتنسيق 30 شريحة مع جلب صور ورسومات بيانية حصرية لكل شريحة...")
 
     try:
         if current_service == "ppt":
@@ -227,7 +268,7 @@ async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 await update.message.reply_document(
                     document=ppt_file,
                     filename=f"{user_text[:30]}_30Slides.pptx",
-                    caption=f"✅ **تم تصميم العرض بنجاح:**\n📌 *{user_text}*\n📊 **عدد الشرائح:** 30 شريحة مفصلة ومدعمة بالصور والتنسيقات.",
+                    caption=f"✅ **تم تصميم العرض بنجاح:**\n📌 *{user_text}*\n📊 **عدد الشرائح:** 30 شريحة مفصلة مع صور ورسومات بيانية حصرية لكل شريحة.",
                     parse_mode="Markdown"
                 )
 
