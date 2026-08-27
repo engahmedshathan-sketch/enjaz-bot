@@ -9,7 +9,7 @@ from telegram.ext import Application, CommandHandler, CallbackQueryHandler, Mess
 from aiohttp import web
 import g4f
 
-TELEGRAM_TOKEN = "8383867623:AAFsI044q7R6Xl44U_z4qWw0nC0K6W3a6yM"
+TELEGRAM_TOKEN = "8867458917:AAEyVQ0Vn97bEfZbANtsFRxMxeJxnbdJ0s4"
 
 # دالة توليد المحتوى الذكي بدون مفاتيح API
 def generate_ai_content(prompt: str) -> str:
@@ -20,7 +20,6 @@ def generate_ai_content(prompt: str) -> str:
         )
         return str(response)
     except Exception:
-        # خيار بديل في حال تعثر النموذج الأول
         response = g4f.ChatCompletion.create(
             model=g4f.models.default,
             messages=[{"role": "user", "content": prompt}],
@@ -210,7 +209,6 @@ async def main_async():
     await app.start()
     await app.updater.start_polling()
     
-    # إبقاء السيرفر يعمل بشكل دائم
     while True:
         await asyncio.sleep(3600)
 
