@@ -22,12 +22,10 @@ from telegram.ext import (
 from aiohttp import web
 
 # ============================================================
-# منصة إنجاز - بوت 1448هـ (النسخة المحسنة - مانع التكرار)
+# منصة إنجاز - بوت 1448هـ (نسخة المنهج السعودي المطابقة)
 # ============================================================
 
-TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN")
-if not TELEGRAM_TOKEN:
-    raise ValueError("⚠️ التوكن غير موجود! يرجى إضافة TELEGRAM_TOKEN في متغيرات البيئة.")
+TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN", "8867458917:AAEyVQ0Vn97bEfZbANtsFRxMxeJxnbdJ0s4")
 
 GRADES = {
     "kg": "رياض الأطفال",
@@ -46,19 +44,17 @@ GRADES = {
 }
 
 SYSTEM_PROMPT = """
-أنت معلم متخصص ومصمم مناهج تعليمية خبير بالمناهج السعودية للمدارس.
-مهمتك كتابة محتوى مدرسي للطلاب. 
-تنبيه صارم: ممنوع منعاً باتاً استخدام لغة الشركات والمؤسسات (مثل: الأداء المؤسسي، العمليات التشغيلية، حجر الزاوية، التطوير الاستراتيجي).
-اكتب محتوى علمي وأكاديمي (أمثلة، تمارين، شرح دروس حقيقية) يتناسب مع عمر الطالب.
+أنت موجه تربوي وخبير في مقررات وزارة التعليم في المملكة العربية السعودية للعام 1448هـ.
+التعليمات الصارمة:
+1. يجب أن يكون المحتوى كأنه (نسخ ولصق) من الكتاب المدرسي السعودي الرسمي التابع لوزارة التعليم.
+2. استخدم نفس المصطلحات، التعاريف، والقواعد الموجودة في الكتاب المدرسي حرفياً.
+3. يمنع منعاً باتاً اختراع معلومات من خارج المنهج أو استخدام لغة عامة أو إدارية.
+4. صغ المحتوى ليطابق تماماً ما يقرؤه الطالب في كتابه المدرسي.
 """
 
-# ============================================================
-# استدعاء الذكاء الاصطناعي مع كسر الكاش (Cache Busting)
-# ============================================================
 def query_ai_engine(prompt: str) -> str:
-    # إضافة نص عشوائي لكسر ذاكرة التخزين المؤقت (Cache)
     unique_id = str(uuid.uuid4())
-    cache_buster_prompt = f"{prompt}\n\n[System Note: Unique ID {unique_id} - Generate completely fresh and specific content.]"
+    cache_buster_prompt = f"{prompt}\n\n[معرف فريد: {unique_id} - التزم بالمنهج السعودي الرسمي فقط]"
     
     payloads = [
         {
@@ -86,48 +82,30 @@ def query_ai_engine(prompt: str) -> str:
 
     for payload in payloads:
         try:
-            response = requests.post(
-                payload["url"],
-                json=payload["data"],
-                timeout=60,
-            )
-            if response.status_code != 200:
-                continue
-
-            text = response.text.strip()
-            if not text:
-                continue
-
-            try:
-                data = response.json()
-                if "choices" in data:
-                    return data["choices"][0]["message"]["content"].strip()
-            except Exception:
-                pass
-
-            if len(text) > 100:
-                return text
-
-        except Exception:
+            response = requests.post(payload["url"], json=payload["data"], timeout=60)
+            if response.status_code == 200:
+                text = response.text.strip()
+                if text:
+                    try:
+                        data = response.json()
+                        if "choices" in data:
+                            return data["choices"][0]["message"]["content"].strip()
+                    except:
+                        pass
+                    if len(text) > 100:
+                        return text
+        except:
             continue
-
     return ""
 
-
-# ============================================================
-# صور الشرائح (تم تحسين الكلمات لتكون تعليمية فقط)
-# ============================================================
 def fetch_unique_slide_image(slide_index: int, topic: str) -> io.BytesIO:
     keywords = [
         "school,students", "classroom,learning", "science,experiment", 
         "math,numbers", "library,books", "education,study", 
         "teacher,blackboard", "reading,desk"
     ]
-
     kw = keywords[(slide_index - 1) % len(keywords)]
-    stable_seed = sum(ord(c) for c in topic) % 5000
-    lock = (slide_index * 37 + stable_seed) % 5000
-
+    lock = random.randint(1, 999999) 
     url = f"https://loremflickr.com/600/450/{kw}?lock={lock}"
 
     try:
@@ -136,10 +114,9 @@ def fetch_unique_slide_image(slide_index: int, topic: str) -> io.BytesIO:
             stream = io.BytesIO(response.content)
             stream.seek(0)
             return stream
-    except Exception:
+    except:
         pass
 
-    # صورة بديلة مرسومة في حال فشل جلب الصورة
     img = Image.new("RGB", (600, 450), color="#F8FAFC")
     draw = ImageDraw.Draw(img)
     draw.rounded_rectangle([15, 15, 585, 435], radius=15, fill="#FFFFFF", outline="#CBD5E1", width=2)
@@ -155,54 +132,42 @@ def fetch_unique_slide_image(slide_index: int, topic: str) -> io.BytesIO:
     output.seek(0)
     return output
 
-
-# ============================================================
-# توليد 30 شريحة مخصصة للدرس
-# ============================================================
 def generate_dynamic_30_slides_data(grade: str, subject: str, topic: str):
     grade = (grade or "غير محدد").strip()
     subject = (subject or "غير محددة").strip()
     topic = (topic or "الدرس").strip()
 
     ai_prompt = f"""
-أنت مدرس تصمم عرض PowerPoint مكون من 30 شريحة.
+أنت تقوم بتفريغ محتوى الكتاب المدرسي السعودي لعمل عرض بوربوينت لدرس محدد.
 الصف: {grade}
 المادة: {subject}
 الموضوع/الدرس: {topic}
 
-تنبيهات هامة جداً (يمنع مخالفتها):
-1. هذا العرض موجه لطلاب مدرسة، تجنب تماماً العبارات الإدارية والمؤسسية (مثل: الأداء المؤسسي، العمليات التشغيلية، حجر الزاوية، التطوير الاستراتيجي).
-2. لا تستخدم قوالب عامة. إذا كان الموضوع عاماً جداً (مثل: ترم كامل أو منهج كامل)، قم باختيار دروس فعلية محددة من المادة واشرحها بالأمثلة والقواعد.
-3. أريد محتوى علمياً حقيقياً في الشرائح: معادلات، أمثلة وتطبيقات، نصوص، تجارب، وقواعد، وليس فقط ديباجات ومقدمات فارغة.
+مطلوب منك 30 شريحة تستند حصرياً على نصوص وزارة التعليم السعودية.
+تصرف كأنك تفتح الكتاب المدرسي وتنسخ منه المحتوى (تعاريف، قوانين، أمثلة الكتاب، أسئلة التقويم).
 
 التنسيق الإلزامي لكل شريحة:
 ---SLIDE---
-TITLE: عنوان خاص بالدرس أو الفقرة
+TITLE: [اكتب عنواناً فرعياً من داخل الدرس]
 CONTENT:
-- معلومة دقيقة أو شرح فعلي للدرس
-- مثال تطبيقي أو قاعدة علمية أو نصية
-- سؤال أو نشاط للطلاب حول هذه الجزئية
-
-كرر هذا التنسيق بالضبط لإنتاج 30 شريحة علمية مختلفة.
+- [انسخ هنا نصاً أو تعريفاً من الكتاب المدرسي]
+- [انسخ هنا مثالاً أو تمريناً مطابقاً لأسئلة الكتاب]
+- [سؤال موجه للطلاب من أسئلة تقويم الدرس]
 """
 
     ai_raw = query_ai_engine(ai_prompt)
     
-    # فحص المحتوى: إذا أنتج الذكاء الاصطناعي قالب الشركات الخاطئ، نتجاهله فوراً
-    bad_keywords = ["الأداء المؤسسي", "العمليات التشغيلية", "البيئة المؤسسية", "حجر الزاوية"]
+    bad_keywords = ["الأداء المؤسسي", "العمليات التشغيلية", "البيئة المؤسسية", "حجر الزاوية", "بيئة العمل"]
     if any(word in ai_raw for word in bad_keywords):
-        ai_raw = "" # تجاهل النتيجة للانتقال للمحتوى المحلي الموثوق
+        ai_raw = "" 
 
     ai_slides = []
-
     if ai_raw:
         chunks = re.split(r"---\s*SLIDE\s*---", ai_raw, flags=re.IGNORECASE)
         for chunk in chunks:
-            if not chunk.strip():
-                continue
+            if not chunk.strip(): continue
             title_match = re.search(r"TITLE\s*:\s*(.+)", chunk, flags=re.IGNORECASE)
             title = title_match.group(1).strip() if title_match else ""
-
             points = []
             for line in chunk.splitlines():
                 line = line.strip()
@@ -210,60 +175,50 @@ CONTENT:
                     point = re.sub(r"^[-•*]\s+", "", line).strip()
                     if point and len(point) > 8:
                         points.append(point)
-
             if title and points:
                 ai_slides.append((title, points[:5]))
 
-    # المولد المحلي الآمن (يعمل إذا فشل الذكاء الاصطناعي في إعطاء محتوى تعليمي حقيقي)
     local_templates = [
-        (f"تمهيد: أهمية {topic}", [f"موقف تمهيدي من الحياة يوضح أهمية {topic} لطلاب {grade}.", f"سؤال استثارة: ماذا تعرفون عن {topic}؟", "لنفكر معاً في حل للمشكلة المعروضة."]),
-        (f"المفهوم الأساسي: {topic}", [f"تعريف دقيق ومبسط لمفهوم {topic}.", "المصطلحات العلمية المرتبطة بالدرس.", f"توضيح الفكرة الرئيسة في مادة {subject}."]),
-        (f"قاعدة أو قانون: {topic}", [f"استعراض القاعدة الأساسية لفهم {topic}.", "خطوات تطبيق القاعدة بشكل متسلسل.", "مثال مباشر لتوضيح القاعدة."]),
-        (f"مثال تطبيقي (1)", [f"تطبيق واقعي للمفهوم {topic}.", "طريقة الحل أو التفسير العلمي خطوة بخطوة.", "ما هي النتيجة المستخلصة؟"]),
-        (f"مثال تطبيقي (2)", ["تطبيق آخر بأرقام أو معطيات مختلفة.", "تحليل المثال وتحديد الفرق عن المثال السابق.", "تدريب سريع للطلاب لحله في دقيقة."]),
-        (f"تنبيه هام وأخطاء شائعة", [f"أبرز الأخطاء التي يقع فيها الطلاب عند دراسة {topic}.", "السبب العلمي أو المنطقي وراء هذا الخطأ.", "الطريقة الصحيحة لتجنبه والتأكد من الحل."]),
-        (f"نشاط فردي: اختبر نفسك", [f"حل هذه المسألة/السؤال المتعلق بـ {topic}.", "دون خطوات الحل في الدفتر.", "سنقوم بمراجعة الإجابات سوياً."]),
-        (f"نشاط ثنائي: فكر وشارك", [f"ناقش مع زميلك حلاً للمشكلة المرتبطة بـ {topic}.", "استخرجوا المعطيات وتوصلوا لنتيجة مشتركة.", "تبادلوا الأوراق لتصحيح الأخطاء."]),
-        (f"ربط الدرس بالواقع", [f"أين نرى {topic} في حياتنا اليومية؟", "أهمية هذه المعرفة في المهن المستقبلية.", "تطبيق عملي نستخدمه باستمرار."]),
-        (f"تدريب مهاري (أسئلة نافس)", [f"سؤال يعتمد على الفهم والاستنتاج في {topic}.", "استبعاد الخيارات الخاطئة للوصول للإجابة.", "تفسير سبب اختيار الإجابة الصحيحة."]),
-        (f"تقويم ختامي للدرس", [f"تلخيص لأهم النقاط التي تعلمناها في {topic}.", "سؤال ختامي شامل لقياس مدى الفهم.", "واجب منزلي لتثبيت المعلومة."]),
+        (f"تمهيد: مقدمة درس {topic}", [f"مراجعة سريعة لما سبقه من دروس {subject}.", f"الفكرة العامة للدرس بناءً على المنهج.", "نشاط استهلالي من الكتاب."]),
+        (f"المفاهيم الأساسية", [f"تعريف دقيق لمفهوم {topic} كما ورد في الكتاب.", "المفردات الجديدة المظللة باللون الأصفر.", f"توضيح الفكرة الرئيسة."]),
+        (f"قاعدة الدرس", [f"القانون أو القاعدة الأساسية في {topic}.", "خطوات الحل خطوة بخطوة.", "مثال محلول من الكتاب."]),
+        (f"تطبيق مباشر", [f"تطبيق على المفهوم {topic}.", "الاستنتاج العلمي المطابق للمنهج.", "طريقة الحل السليمة."]),
+        (f"تأكد وفهم", ["مثال إضافي من قسم (تأكد).", "تحليل المثال وتوضيح الفروقات.", "تدريب للطلاب لحله في دقيقة."]),
+        (f"أخطاء شائعة", [f"تنبيهات وردت في الكتاب حول {topic}.", "السبب العلمي وراء هذا الخطأ.", "التصحيح المعتمد."]),
+        (f"تدرب وحل المسائل", [f"سؤال من أسئلة (تدرب وحل المسائل).", "كتابة المعطيات والمطلوب.", "استعراض الحل النهائي."]),
+        (f"مسائل مهارات التفكير العليا", [f"سؤال تحدي من الكتاب حول {topic}.", "اكتشف الخطأ وصححه.", "التبرير العلمي للإجابة."]),
+        (f"الربط بالحياة", [f"فقرة (الربط بالحياة) المذكورة في الكتاب.", "تطبيق علمي نستخدمه باستمرار.", "ربط الدرس برؤية 2030 إن وجد في المنهج."]),
+        (f"مراجعة تراكمية", [f"سؤال يربط الدرس بالدروس السابقة.", "استبعاد الخيارات الخاطئة.", "تفسير سبب اختيار الإجابة."]),
+        (f"تقويم ختامي للدرس", [f"ملخص الدرس المذكور في نهاية الوحدة.", "سؤال ختامي شامل لقياس مدى الفهم.", "الواجب المنزلي من كراسة التطبيقات."]),
     ]
 
     final_slides = []
     used_titles = set()
 
-    # أخذ شرائح الذكاء الاصطناعي
     for title, points in ai_slides:
         normalized = re.sub(r"\s+", " ", title).strip().lower()
-        if normalized in used_titles:
-            continue
+        if normalized in used_titles: continue
         final_slides.append((title, points))
         used_titles.add(normalized)
-        if len(final_slides) >= 30:
-            break
+        if len(final_slides) >= 30: break
 
-    # تكميل الشرائح من القوالب المحلية التعليمية إذا كان العدد أقل من 30
     for title, points in local_templates:
         normalized = re.sub(r"\s+", " ", title).strip().lower()
-        if normalized in used_titles:
-            continue
+        if normalized in used_titles: continue
         final_slides.append((title, points))
         used_titles.add(normalized)
-        if len(final_slides) >= 30:
-            break
+        if len(final_slides) >= 30: break
 
-    # استكمال العدد حتى 30 شريحة بتمارين وتدريبات
     while len(final_slides) < 30:
         number = len(final_slides) + 1
         final_slides.append(
-            (f"تمرين إضافي وتطبيق ({number})", [
-                f"مسألة أو سؤال تطبيقي إضافي حول {topic}.",
-                f"تحدي للطلاب المتفوقين في {subject}.",
+            (f"تمرين إضافي من الكتاب ({number})", [
+                f"مسألة إضافية حول {topic}.",
+                f"تدريب للطلاب في مادة {subject}.",
                 "مراجعة الحلول والمناقشة الجماعية.",
             ])
         )
 
-    # ترقيم العناوين
     numbered = []
     for i, (title, points) in enumerate(final_slides[:30], start=1):
         clean_title = re.sub(r"^\s*\d+\s*[\.\-:)]\s*", "", title).strip()
@@ -271,25 +226,19 @@ CONTENT:
 
     return numbered
 
-
-# ============================================================
-# إنشاء PowerPoint
-# ============================================================
 def create_powerpoint_presentation_full(grade: str, subject: str, topic: str, output_path: str):
     prs = Presentation()
     prs.slide_width = Inches(13.333)
     prs.slide_height = Inches(7.5)
-
     slides_data = generate_dynamic_30_slides_data(grade, subject, topic)
 
     for idx, (title_text, points) in enumerate(slides_data, start=1):
         slide = prs.slides.add_slide(prs.slide_layouts[6])
-
         top_bar = slide.shapes.add_shape(MSO_SHAPE.RECTANGLE, Inches(0), Inches(0), Inches(13.333), Inches(0.2))
         top_bar.fill.solid()
         top_bar.fill.fore_color.rgb = RGBColor(27, 73, 101)
         top_bar.line.fill.background()
-
+        
         card = slide.shapes.add_shape(MSO_SHAPE.ROUNDED_RECTANGLE, Inches(5.4), Inches(1.5), Inches(7.2), Inches(5.1))
         card.fill.solid()
         card.fill.fore_color.rgb = RGBColor(248, 250, 252)
@@ -299,7 +248,6 @@ def create_powerpoint_presentation_full(grade: str, subject: str, topic: str, ou
         title_box = slide.shapes.add_textbox(Inches(0.8), Inches(0.4), Inches(11.733), Inches(1.0))
         tf_title = title_box.text_frame
         tf_title.word_wrap = True
-
         p_title = tf_title.paragraphs[0]
         p_title.text = title_text
         p_title.alignment = PP_ALIGN.RIGHT
@@ -332,9 +280,6 @@ def create_powerpoint_presentation_full(grade: str, subject: str, topic: str, ou
 
     prs.save(output_path)
 
-# ============================================================
-# مستندات Word
-# ============================================================
 def create_educational_doc_1448(service_code: str, grade: str, subject: str, topic: str, output_path: str):
     doc = Document()
     for section in doc.sections:
@@ -397,10 +342,6 @@ def create_educational_doc_1448(service_code: str, grade: str, subject: str, top
 
     doc.save(output_path)
 
-
-# ============================================================
-# القوائم
-# ============================================================
 def main_menu():
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("📊 بوربوينت 30 شريحة + جميع الإضافات", callback_data="svc_ppt")],
@@ -427,16 +368,10 @@ def grade_menu():
         [InlineKeyboardButton("⬅️ القائمة الرئيسية", callback_data="home")],
     ])
 
-# ============================================================
-# الأوامر واستقبال النصوص
-# ============================================================
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data.setdefault("grade", "")
     context.user_data.setdefault("subject", "")
-    welcome_text = (
-        "🌟 *أهلاً بك في منصة إنجاز للخدمات التعليمية والأكاديمية 1448هـ*\n\n"
-        "👇 اختر الخدمة من القائمة:"
-    )
+    welcome_text = "🌟 *أهلاً بك في منصة إنجاز للخدمات التعليمية والأكاديمية 1448هـ*\n\n👇 اختر الخدمة من القائمة:"
     if update.message:
         await update.message.reply_text(welcome_text, reply_markup=main_menu(), parse_mode="Markdown")
     elif update.callback_query:
@@ -495,7 +430,7 @@ async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text("🎓 اختر الصف أولاً من الزر، ثم أرسل المادة والدرس.", reply_markup=grade_menu())
             return
 
-    status_msg = await update.message.reply_text("⏳ جارٍ إعداد وتأليف المحتوى الأكاديمي، يرجى الانتظار...")
+    status_msg = await update.message.reply_text("⏳ جارٍ استخراج المحتوى من الكتاب المدرسي 1448هـ وتجهيز الملف...")
 
     try:
         if "-" in user_text:
@@ -507,23 +442,23 @@ async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         context.user_data["subject"] = subject
 
         if current_service == "svc_ppt":
-            file_name = f"presentation_{user.id}_{uuid.uuid4().hex[:4]}.pptx"
+            file_name = f"presentation_{user.id}_{uuid.uuid4().hex[:6]}.pptx"
             create_powerpoint_presentation_full(grade=grade, subject=subject, topic=topic, output_path=file_name)
 
             with open(file_name, "rb") as ppt_file:
                 await update.message.reply_document(
-                    document=ppt_file, filename=f"{subject[:20]}_{topic[:25]}_1448H.pptx",
+                    document=ppt_file, filename=f"{subject[:20]}_{topic[:25]}_{uuid.uuid4().hex[:4]}.pptx",
                     caption=f"✅ تم إنشاء العرض التعليمي بنجاح\n\n🎓 الصف: {grade}\n📚 المادة: {subject}\n📌 الدرس: {topic}"
                 )
             if os.path.exists(file_name): os.remove(file_name)
 
         else:
-            file_name = f"doc_{user.id}_{uuid.uuid4().hex[:4]}.docx"
+            file_name = f"doc_{user.id}_{uuid.uuid4().hex[:6]}.docx"
             create_educational_doc_1448(service_code=current_service, grade=grade, subject=subject, topic=topic, output_path=file_name)
 
             with open(file_name, "rb") as doc_file:
                 await update.message.reply_document(
-                    document=doc_file, filename=f"{service_name[:20]}_{topic[:25]}_1448H.docx",
+                    document=doc_file, filename=f"{service_name[:20]}_{topic[:25]}_{uuid.uuid4().hex[:4]}.docx",
                     caption=f"✅ تم تجهيز مستند Word\n\nالخدمة: {service_name}\nالصف: {grade}\nالمادة: {subject}"
                 )
             if os.path.exists(file_name): os.remove(file_name)
@@ -533,10 +468,7 @@ async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception as exc:
         await status_msg.edit_text(f"⚠️ حدث خطأ. حاول صياغة عنوان الدرس بشكل أوضح. \nالتفاصيل: {str(exc)[:200]}")
 
-# ============================================================
-# خادم الويب للتشغيل على الاستضافة
-# ============================================================
-async def handle_ping(request): return web.Response(text="Bot is running!")
+async def handle_ping(request): return web.Response(text="Bot is running smoothly on Render!")
 
 async def start_web_server():
     server = web.Application()
@@ -554,7 +486,7 @@ async def main_async():
     app.add_handler(CallbackQueryHandler(button_handler))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, text_handler))
     
-    print("البوت يعمل الآن (النسخة الخالية من التكرار) - 1448هـ")
+    print("البوت يعمل الآن (نسخة المنهج السعودي - 1448هـ)")
     await app.initialize()
     await app.start()
     await app.updater.start_polling()
