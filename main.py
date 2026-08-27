@@ -12,21 +12,36 @@ from aiohttp import web
 TELEGRAM_TOKEN = "8867458917:AAEyVQ0Vn97bEfZbANtsFRxMxeJxnbdJ0s4"
 
 def generate_ai_content(prompt: str) -> str:
-    url = "https://text.pollinations.ai/"
+    # استخدام سيرفر Blackbox AI المجاني (لا يحتاج مفاتيح ولا يحظر السيرفرات)
+    url = "https://api.blackbox.ai/api/chat"
+    headers = {"Content-Type": "application/json"}
     payload = {
         "messages": [
-            {"role": "system", "content": "أنت مساعد وخبير أكاديمي وتعليمي محترف تجيب باللغة العربية بجودة عالية وبدقة."},
             {"role": "user", "content": prompt}
         ],
-        "model": "openai",
-        "seed": 42
+        "model": "deepseek-coder-v2"
     }
     
-    response = requests.post(url, json=payload, timeout=60)
-    if response.status_code == 200:
-        return response.text
-    else:
-        raise Exception(f"خطأ في معالجة الذكاء الاصطناعي ({response.status_code})")
+    try:
+        response = requests.post(url, headers=headers, json=payload, timeout=60)
+        if response.status_code == 200:
+            text = response.text
+            # تنظيف أي نصوص إضافية يرسلها السيرفر أحياناً
+            if "$$$" in text:
+                text = text.split("$$$")[-1]
+            return text.strip()
+        else:
+            raise Exception(f"API Error {response.status_code}")
+    except Exception:
+        # رابط احتياطي في حال الضغط على السيرفر الأول
+        try:
+            fallback_url = "https://backend.buildpicoapps.com/aero/run/llm-api?pk=v1-Z0FBQUFBQm1fM1M2S2s1N2xVb19yX18tOFRHcjNpd1ZSNi1zT0ZtMmlVd0F6RnRKZnNqdWRtSGxjTklNTE5Mbnc5cEhrbC1hQk4xX3dJRG1oanFZa0ZJLVpEWE51U3o1Umc9PQ=="
+            res = requests.post(fallback_url, json={"prompt": prompt}, timeout=60)
+            if res.status_code == 200:
+                return res.json().get("text", "عذراً، لم أتمكن من توليد النص.")
+            raise Exception()
+        except Exception:
+            raise Exception("سيرفرات الذكاء الاصطناعي المجانية تواجه ضغطاً حالياً، يرجى المحاولة بعد دقيقة.")
 
 def create_powerpoint_presentation(topic: str, output_path: str):
     prompt = (
