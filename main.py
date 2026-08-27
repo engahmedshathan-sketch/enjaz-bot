@@ -1,5 +1,6 @@
 import os
 import asyncio
+import requests
 from pptx import Presentation
 from pptx.util import Inches, Pt
 from pptx.dml.color import RGBColor
@@ -7,24 +8,25 @@ from pptx.enum.text import PP_ALIGN
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, filters, ContextTypes
 from aiohttp import web
-import g4f
 
 TELEGRAM_TOKEN = "8867458917:AAEyVQ0Vn97bEfZbANtsFRxMxeJxnbdJ0s4"
 
-# دالة توليد المحتوى الذكي بدون مفاتيح API
 def generate_ai_content(prompt: str) -> str:
-    try:
-        response = g4f.ChatCompletion.create(
-            model=g4f.models.gpt_4o_mini,
-            messages=[{"role": "user", "content": prompt}],
-        )
-        return str(response)
-    except Exception:
-        response = g4f.ChatCompletion.create(
-            model=g4f.models.default,
-            messages=[{"role": "user", "content": prompt}],
-        )
-        return str(response)
+    url = "https://text.pollinations.ai/"
+    payload = {
+        "messages": [
+            {"role": "system", "content": "أنت مساعد وخبير أكاديمي وتعليمي محترف تجيب باللغة العربية بجودة عالية وبدقة."},
+            {"role": "user", "content": prompt}
+        ],
+        "model": "openai",
+        "seed": 42
+    }
+    
+    response = requests.post(url, json=payload, timeout=60)
+    if response.status_code == 200:
+        return response.text
+    else:
+        raise Exception(f"خطأ في معالجة الذكاء الاصطناعي ({response.status_code})")
 
 def create_powerpoint_presentation(topic: str, output_path: str):
     prompt = (
@@ -140,7 +142,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if code == "ppt":
             await query.edit_message_text("📊 أرسل الآن عنوان أو موضوع العرض التقديمي لتوليد الملف فوراً:")
         else:
-            await query.edit_message_text(f"✨ خدمة: *{name}*\n\nيرجى كتابة التفاصيل أو إرسال المحتوى وسأقوم بإعداده لك فوراً:", parse_mode="Markdown")
+            await query.edit_message_text(f"✨ خدمة: *{name}*\n\nيرجى كتابة الموضوع بالتفصيل وسأقوم بإعداده لك فوراً:", parse_mode="Markdown")
 
 async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_text = update.message.text
@@ -167,9 +169,9 @@ async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 os.remove(file_name)
         else:
             prompt = (
-                f"أنت خبير أكاديمي وتعليمي تقدم خدمة: {service_name}.\n"
-                f"المطلوب: قم بإعداد المحتوى الآتي بأعلى جودة واحترافية وباللغة العربية، مع التنسيق الأكاديمي الدقيق:\n\n"
-                f"{user_text}"
+                f"أنت خبير أكاديمي وباحث محترف. قم بإعداد: {service_name}.\n"
+                f"الموضوع المطلوب: {user_text}\n\n"
+                f"يرجى كتابة محتوى شامل ومتكامل، منظم بعناوين وفقرات واضحة، مع مقدمة ومحاور رئيسية وخاتمة باللغة العربية الفصحى."
             )
             result = generate_ai_content(prompt)
             
@@ -184,9 +186,9 @@ async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         await status_msg.edit_text(f"⚠️ حدث خطأ: {str(e)}")
 
-# خادم وهمي لإبقاء Render يعمل باستمرار دون توقف
+# سيرفر لإبقاء الخدمة تعمل على Render
 async def handle_ping(request):
-    return web.Response(text="Bot is running live 24/7!")
+    return web.Response(text="Bot is online")
 
 async def start_web_server():
     server = web.Application()
