@@ -93,7 +93,8 @@ def extract_pdf_to_text(pdf_bytes: bytes) -> str:
 def fetch_unique_slide_image(slide_index: int, topic: str) -> io.BytesIO:
     keywords = ["school,students", "classroom,learning", "science,experiment", "math,numbers", "library,books"]
     kw = keywords[(slide_index - 1) % len(keywords)]
-    url = f"https://loremflickr.com/600/450/{kw}?lock={random.randint(1, 99999)"
+    lock_val = random.randint(1, 999999)
+    url = f"https://loremflickr.com/600/450/{kw}?lock={lock_val}"
     try:
         response = requests.get(url, timeout=5)
         if response.status_code == 200 and len(response.content) > 3000:
@@ -396,7 +397,7 @@ async def main_async():
     app.add_handler(MessageHandler(filters.Document.ALL, document_handler))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, text_handler))
     
-    print("البوت يعمل الآن بخدمة البحوث الأكاديمية المجزأة لضمان اكتمال الصفحات")
+    print("البوت يعمل الآن بدون أخطاء تشغيلية")
     await app.initialize()
     await app.start()
     await app.updater.start_polling()
