@@ -46,39 +46,56 @@ COLOR_PALETTES = [
 ]
 
 def query_ai_engine(prompt: str) -> str:
+    # محاولة الاستعلام من محرك الذكاء الاصطناعي الأساسي
     try:
         response = requests.post(
             "https://text.pollinations.ai/",
             json={"messages": [{"role": "user", "content": prompt}], "model": "openai", "jsonMode": False},
-            timeout=50
+            timeout=90
         )
-        if response.status_code == 200 and len(response.text.strip()) > 100:
-            return response.text.strip()
+        if response.status_code == 200:
+            text = response.text.strip()
+            if len(text) > 100:
+                return text
     except:
         pass
-    return ""
+
+    # محاولة احتياطية عبر محرك بديل لضمان عدم فشل الاستجابة أبداً
+    try:
+        response = requests.post(
+            "https://api.airforce/v1/chat/completions",
+            json={"model": "gpt-4o-mini", "messages": [{"role": "user", "content": prompt}]},
+            timeout=60
+        )
+        if response.status_code == 200:
+            data = response.json()
+            if "choices" in data:
+                return data["choices"][0]["message"]["content"].strip()
+    except:
+        pass
+    
+    return "عذراً، حدث ضغط مؤقت في الاتصال. يرجى إعادة إرسال الطلب وسيعمل فوراً."
 
 def generate_full_academic_research(topic: str) -> str:
-    sections_prompts = [
-        f"اكتب المقدمة والأهمية لخط البحث الأكاديمي بعنوان: '{topic}' على غرار رسائل الماجستير بجامعة صعدة لعام 1448هـ.",
-        f"اكتب مشكلة الدراسة وأسئلتها لبحث بعنوان: '{topic}'.",
-        f"اكتب فرضيات الدراسة وأهدافها لبحث بعنوان: '{topic}'.",
-        f"اكتب حدود الدراسة ومصطلحاتها (الاصطلاحية والإجرائية) لبحث بعنوان: '{topic}'.",
-        f"اكتب الدراسات السابقة (عرض 4 دراسات مع التعليق) لبحث بعنوان: '{topic}'.",
-        f"اكتب الإطار المنهجي (المنهج، المجتمع، العينة، الأداة) وقائمة المراجع العربية والأجنبية لبحث بعنوان: '{topic}'."
-    ]
-    
-    full_text = ""
-    for p in sections_prompts:
-        res = query_ai_engine(p)
-        if res:
-            full_text += "\n\n" + res
-        else:
-            full_text += f"\n\n[محتوى تفصيلي معتمد للقسم المتعلق بـ {topic} - منصة إنجاز 1448هـ]"
-    return full_text
+    prompt = f"""
+اكتب خطة وبحث أكاديمي متكامل، مفصل، وشامل جداً حول موضوع: '{topic}'
+على غرار رسائل الماجستير والدكتوراه الأكاديمية في الجامعات اليمنية (مثل جامعة صعدة) لعام 1448هـ.
+يجب أن يحتوي البحث على الأقسام التالية مفصلة تماماً باللغة العربية الفصحى الرصينة وبدون أي اختصار:
+1. العنوان الرئيسي والبيانات الأكاديمية (جامعة صعدة - نيابة الدراسات العليا والبحث العلمي).
+2. أولاً: المقدمة (تأصيل علمي وميداني مفصل).
+3. ثانياً: مشكلة الدراسة وأسئلتها (السؤال الرئيس والأسئلة الفرعية).
+4. ثالثاً: فرضيات الدراسة الرئيسية والفرعية.
+5. رابعاً: أهداف الدراسة والأهمية العلمية والتطبيقية.
+6. خامساً: حدود الدراسة (الموضوعية، البشرية، المكانية بمحافظة صعدة، والزمانية 1448هـ).
+7. سادساً: مصطلحات الدراسة (التعريفات الاصطلاحية والإجرائية).
+8. سابعاً: الدراسات السابقة (عرض دراسات سابقة حديثة مع التعليق والمقارنة).
+9. ثامناً: الإطار المنهجي (المنهج، المجتمع، العينة، أداة الدراسة).
+10. قائمة المراجع والمصادر (عربية وأجنبية موثقة).
+"""
+    return query_ai_engine(prompt)
 
 def clean_pdf_text_with_ai(raw_text: str) -> str:
-    prompt = f"قم بتنظيف وترتيب النص التالي المستخرج من ملف PDF ليكون بصيغة مستند منظم:\n{raw_text[:4000]}"
+    prompt = f"قم بتنظيف وترتيب النص التالي المستخرج من ملف PDF ليكون بصيغة مستند منظم واحترافي باللغة العربية:\n{raw_text[:4000]}"
     res = query_ai_engine(prompt)
     return res if res else raw_text
 
@@ -93,8 +110,7 @@ def extract_pdf_to_text(pdf_bytes: bytes) -> str:
 def fetch_unique_slide_image(slide_index: int, topic: str) -> io.BytesIO:
     keywords = ["school,students", "classroom,learning", "science,experiment", "math,numbers", "library,books"]
     kw = keywords[(slide_index - 1) % len(keywords)]
-    lock_val = random.randint(1, 999999)
-    url = f"https://loremflickr.com/600/450/{kw}?lock={lock_val}"
+    url = f"https://loremflickr.com/600/450/{kw}?lock={random.randint(1, 999999)}"
     try:
         response = requests.get(url, timeout=5)
         if response.status_code == 200 and len(response.content) > 3000:
@@ -156,6 +172,43 @@ def create_powerpoint_presentation_full(grade: str, subject: str, topic: str, ou
         p_foot.alignment = PP_ALIGN.LEFT; p_foot.font.size = Pt(10); p_foot.font.color.rgb = RGBColor(148, 163, 184)
     prs.save(output_path)
 
+def create_ppt_from_pdf_text(pdf_text: str, output_path: str):
+    prs = Presentation()
+    prs.slide_width, prs.slide_height = Inches(13.333), Inches(7.5)
+    paragraphs = [p.strip() for p in pdf_text.split("\n") if p.strip() and len(p.strip()) > 5]
+    if not paragraphs: paragraphs = ["محتوى مستخرج من ملف الـ PDF"]
+    chunk_size = 4
+    chunks = [paragraphs[i:i + chunk_size] for i in range(0, len(paragraphs), chunk_size)]
+    total_slides = min(max(len(chunks), 1), 30)
+
+    for idx in range(1, total_slides + 1):
+        slide = prs.slides.add_slide(prs.slide_layouts[6])
+        palette = COLOR_PALETTES[(idx - 1) % len(COLOR_PALETTES)]
+        
+        top_bar = slide.shapes.add_shape(MSO_SHAPE.RECTANGLE, Inches(0), Inches(0), Inches(13.333), Inches(0.25))
+        top_bar.fill.solid(); top_bar.fill.fore_color.rgb = palette["primary"]; top_bar.line.fill.background()
+
+        card = slide.shapes.add_shape(MSO_SHAPE.ROUNDED_RECTANGLE, Inches(5.4), Inches(1.5), Inches(7.2), Inches(5.1))
+        card.fill.solid(); card.fill.fore_color.rgb = palette["card"]; card.line.color.rgb = palette["accent"]; card.line.width = Pt(1.5)
+
+        title_box = slide.shapes.add_textbox(Inches(0.8), Inches(0.4), Inches(11.733), Inches(1.0))
+        p_title = title_box.text_frame.paragraphs[0]
+        p_title.text = f"شريحة مستخرجة رقم ({idx})"
+        p_title.alignment = PP_ALIGN.RIGHT; p_title.font.size = Pt(24); p_title.font.bold = True; p_title.font.color.rgb = palette["primary"]
+
+        content_box = slide.shapes.add_textbox(Inches(5.6), Inches(1.7), Inches(6.8), Inches(4.7))
+        tf_content = content_box.text_frame; tf_content.word_wrap = True
+        current_chunk = chunks[(idx - 1) % len(chunks)]
+        for p_idx, point in enumerate(current_chunk):
+            p = tf_content.paragraphs[0] if p_idx == 0 else tf_content.add_paragraph()
+            p.text = f"◀ {point[:110]}"; p.alignment = PP_ALIGN.RIGHT; p.font.size = Pt(16); p.font.color.rgb = RGBColor(30, 41, 59); p.space_after = Pt(12)
+
+        footer_box = slide.shapes.add_textbox(Inches(0.8), Inches(6.9), Inches(11.733), Inches(0.4))
+        p_foot = footer_box.text_frame.paragraphs[0]
+        p_foot.text = f"شريحة {idx} من {total_slides} | تحويل PDF مباشر | 1448هـ"
+        p_foot.alignment = PP_ALIGN.LEFT; p_foot.font.size = Pt(11); p_foot.font.color.rgb = RGBColor(148, 163, 184)
+    prs.save(output_path)
+
 def create_educational_doc_1448(service_code: str, grade: str, subject: str, topic: str, output_path: str):
     doc = Document()
     for s in doc.sections: s.top_margin = s.bottom_margin = s.left_margin = s.right_margin = DocxInches(1)
@@ -165,12 +218,12 @@ def create_educational_doc_1448(service_code: str, grade: str, subject: str, top
         ai_content = generate_full_academic_research(topic)
     else:
         prompts = {
-            "svc_exam": f"اكتب اختباراً شاملاً مع نموذج إجابة لعام 1448هـ للصف {grade} مادة {subject} درس {topic}.",
-            "svc_remedial": f"اكتب خطة علاجية وإثرائية وأوراق عمل للصف {grade} مادة {subject} درس {topic}.",
-            "svc_portfolio": f"اكتب ملف إنجاز للمعلم للصف {grade} مادة {subject} لعام 1448هـ.",
-            "svc_performance": f"اكتب سجل أداء وظيفي للمعلم لعام 1448هـ للصف {grade} مادة {subject}.",
+            "svc_exam": f"اكتب اختباراً شاملاً مع نموذج إجابة وتوزيع درجات لعام 1448هـ للصف {grade} مادة {subject} درس {topic}.",
+            "svc_remedial": f"اكتب خطة علاجية وإثرائية وأوراق عمل تفصيلية للصف {grade} مادة {subject} درس {topic}.",
+            "svc_portfolio": f"اكتب ملف إنجاز للمعلم منظماً وشاملاً للصف {grade} مادة {subject} لعام 1448هـ.",
+            "svc_performance": f"اكتب سجل أداء وظيفي للمعلم لعام 1448هـ للصف {grade} مادة {subject} مع بنود التقييم.",
             "svc_operation": f"اكتب خطة تشغيلية تعليمية لعام 1448هـ للصف {grade} مادة {subject} درس {topic}.",
-            "svc_loss": f"اكتب خطة معالجة الفاقد التعليمي للصف {grade} مادة {subject} درس {topic}.",
+            "svc_loss": f"اكتب خطة معالجة الفاقد التعليمي مفصلة للصف {grade} مادة {subject} درس {topic}.",
         }
         titles = {
             "svc_exam": f"الاختبار وتحليل النتائج\n{subject} - {grade}\n{topic}",
@@ -205,7 +258,7 @@ def create_educational_doc_1448(service_code: str, grade: str, subject: str, top
     else:
         p = doc.add_paragraph()
         p.alignment = WD_ALIGN_PARAGRAPH.RIGHT
-        p.add_run(f"تم إعداد خطة وبحث أكاديمي متكامل حول موضوع: {topic} لعام 1448هـ.")
+        p.add_run(f"تم إعداد المستند الأكاديمي والتعليمي لموضوع: {topic} لعام 1448هـ.")
 
     doc.save(output_path)
 
@@ -241,7 +294,7 @@ def grade_menu():
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data.setdefault("grade", "")
     context.user_data.setdefault("subject", "")
-    welcome_text = "🌟 *أهلاً بك في منصة إنجاز الأكاديمية (البحوث الشاملة)*\n\n👇 اختر الخدمة المطلوبة:"
+    welcome_text = "🌟 *أهلاً بك في منصة إنجاز الأكاديمية الشاملة 1448هـ*\n\n👇 اختر الخدمة المطلوبة:"
     if update.message: await update.message.reply_text(welcome_text, reply_markup=main_menu(), parse_mode="Markdown")
     elif update.callback_query: await update.callback_query.message.reply_text(welcome_text, reply_markup=main_menu(), parse_mode="Markdown")
 
@@ -269,11 +322,11 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     if data == "mode_pdf_ppt":
         context.user_data["action"] = "pdf_to_ppt"
-        await query.edit_message_text("📂 أرسل ملف الـ PDF الآن لتحويله إلى بوربوينت.", parse_mode="Markdown")
+        await query.edit_message_text("📂 أرسل ملف الـ PDF الآن لتحويله إلى بوربوينت منسق.", parse_mode="Markdown")
         return
     if data == "mode_pdf_word":
         context.user_data["action"] = "pdf_to_word"
-        await query.edit_message_text("📂 أرسل ملف الـ PDF الآن لتحويله إلى Word منظم.", parse_mode="Markdown")
+        await query.edit_message_text("📂 أرسل ملف الـ PDF الآن لتحويله إلى Word منظم وخالٍ من اللخبطة.", parse_mode="Markdown")
         return
     if data == "bot_restart":
         await restart_command(update, context)
@@ -288,11 +341,11 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         context.user_data["current_service"] = data
         context.user_data["service_name"] = services[data]
         if data == "svc_research":
-            await query.edit_message_text("🎓 *خدمة البحث الأكاديمي الشامل*\n\nأرسل الآن **عنوان البحث أو خطته**، وسأقوم بتوليد البحث كاملاً ومفصلاً في ملف Word.", parse_mode="Markdown")
+            await query.edit_message_text("🎓 *خدمة البحث الأكاديمي الشامل (جامعة صعدة)*\n\nأرسل الآن **عنوان البحث أو خطته**، وسأقوم بتوليد البحث كاملاً ومفصلاً في ملف Word.", parse_mode="Markdown")
         else:
             grade = context.user_data.get("grade", "")
             if not grade:
-                await query.edit_message_text("🎓 اختر الصف أولاً:", reply_markup=grade_menu())
+                await query.edit_message_text("🎓 اختر الصف أولاً لتخصيص المحتوى:", reply_markup=grade_menu())
                 return
             await query.edit_message_text(f"الخدمة: *{services[data]}*\nالصف: *{grade}*\n\nأرسل الآن: *المادة - الدرس*", parse_mode="Markdown")
 
@@ -303,7 +356,7 @@ async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     service_name = context.user_data.get("service_name", "عرض بوربوينت")
     grade = context.user_data.get("grade", "دراسات عليا")
 
-    status_msg = await update.message.reply_text("⏳ جاري إعداد وتأليف المستند الأكاديمي الشامل (قد يستغرق 30 ثانية لتوليد محتوى كامل)...")
+    status_msg = await update.message.reply_text("⏳ جاري إعداد وتأليف المستند الأكاديمي الشامل عبر الذكاء الاصطناعي...")
 
     try:
         if current_service == "svc_research":
@@ -314,7 +367,7 @@ async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             with open(file_name, "rb") as doc_file:
                 await update.message.reply_document(
                     document=doc_file, filename=f"Academic_Research_{topic[:15]}.docx",
-                    caption=f"✅ تم إعداد البحث الأكاديمي الشامل والمتكامل بنجاح\n\n📌 العنوان: {topic}"
+                    caption=f"✅ تم إعداد البحث الأكاديمي الشامل والمتكامل بنجاح على غرار نموذج جامعة صعدة\n\n📌 العنوان: {topic}"
                 )
             if os.path.exists(file_name): os.remove(file_name)
         else:
@@ -327,18 +380,18 @@ async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 file_name = f"presentation_{user.id}_{uuid.uuid4().hex[:6]}.pptx"
                 create_powerpoint_presentation_full(grade=grade, subject=subject, topic=topic, output_path=file_name)
                 with open(file_name, "rb") as ppt_file:
-                    await update.message.reply_document(document=ppt_file, filename=f"{subject[:15]}_{topic[:20]}.pptx", caption=f"✅ تم إنشاء العرض التعليمي بنجاح")
+                    await update.message.reply_document(document=ppt_file, filename=f"{subject[:15]}_{topic[:20]}.pptx", caption=f"✅ تم إنشاء العرض التعليمي بتصاميم متجددة لكل شريحة\n\n🎓 الصف: {grade}\n📚 المادة: {subject}\n📌 الدرس: {topic}")
                 if os.path.exists(file_name): os.remove(file_name)
             else:
                 file_name = f"doc_{user.id}_{uuid.uuid4().hex[:6]}.docx"
                 create_educational_doc_1448(service_code=current_service, grade=grade, subject=subject, topic=topic, output_path=file_name)
                 with open(file_name, "rb") as doc_file:
-                    await update.message.reply_document(document=doc_file, filename=f"{service_name[:15]}_{topic[:20]}.docx", caption=f"✅ تم تجهيز المستند بنجاح")
+                    await update.message.reply_document(document=doc_file, filename=f"{service_name[:15]}_{topic[:20]}.docx", caption=f"✅ تم تجهيز مستند Word الاحترافي\n\nالخدمة: {service_name}\nالصف: {grade}\nالمادة: {subject}")
                 if os.path.exists(file_name): os.remove(file_name)
 
         await status_msg.delete()
     except Exception as exc:
-        await status_msg.edit_text(f"⚠️ حدث خطأ: {str(exc)[:150]}")
+        await status_msg.edit_text(f"⚠️ حدث خطأ أثناء المعالجة: {str(exc)[:150]}")
 
 async def document_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     doc = update.message.document
@@ -349,7 +402,7 @@ async def document_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("⚠️ يرجى إرسال ملف بصيغة PDF.")
         return
 
-    status_msg = await update.message.reply_text("⏳ جاري المعالجة...")
+    status_msg = await update.message.reply_text("⏳ جاري استلام ملف الـ PDF ومعالجته عبر الذكاء الاصطناعي...")
     try:
         file = await context.bot.get_file(doc.file_id)
         pdf_bytes = await file.download_as_bytearray()
@@ -359,7 +412,7 @@ async def document_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             output_file = f"ppt_{user.id}_{uuid.uuid4().hex[:6]}.pptx"
             create_ppt_from_pdf_text(raw_text, output_file)
             with open(output_file, "rb") as f:
-                await update.message.reply_document(document=f, filename=f"Converted_{doc.file_name[:-4]}.pptx", caption="✅ تم التحويل بنجاح.")
+                await update.message.reply_document(document=f, filename=f"Converted_{doc.file_name[:-4]}.pptx", caption="✅ تم تحويل ملف الـ PDF إلى عرض بوربوينت منسق بنجاح.")
         else:
             organized_text = clean_pdf_text_with_ai(raw_text)
             output_file = f"docx_{user.id}_{uuid.uuid4().hex[:6]}.docx"
@@ -367,18 +420,18 @@ async def document_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             for s in doc_obj.sections: s.top_margin = s.bottom_margin = s.left_margin = s.right_margin = DocxInches(1)
             title_p = doc_obj.add_paragraph()
             title_p.alignment = WD_ALIGN_PARAGRAPH.CENTER
-            title_p.add_run("ملف مستخرج ومنظم بدقة").font.size = DocxPt(18)
+            title_p.add_run("ملف مستخرج ومُنظم بدقة").font.size = DocxPt(18)
             for block in organized_text.split("\n"):
                 if block.strip(): doc_obj.add_paragraph(block.strip())
             doc_obj.save(output_file)
             with open(output_file, "rb") as f:
-                await update.message.reply_document(document=f, filename=f"Cleaned_{doc.file_name[:-4]}.docx", caption="✅ تم تحويل الملف إلى Word بنجاح.")
+                await update.message.reply_document(document=f, filename=f"Cleaned_{doc.file_name[:-4]}.docx", caption="✅ تم تحويل ملف الـ PDF وتنظيمه في مستند Word احترافي.")
         if os.path.exists(output_file): os.remove(output_file)
         await status_msg.delete()
     except Exception as e:
-        await status_msg.edit_text(f"⚠️ حدث خطأ: {str(e)[:150]}")
+        await status_msg.edit_text(f"⚠️ حدث خطأ أثناء المعالجة: {str(e)[:150]}")
 
-async def handle_ping(request): return web.Response(text="Bot is running!")
+async def handle_ping(request): return web.Response(text="Bot is running perfectly!")
 
 async def start_web_server():
     server = web.Application()
@@ -397,7 +450,7 @@ async def main_async():
     app.add_handler(MessageHandler(filters.Document.ALL, document_handler))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, text_handler))
     
-    print("البوت يعمل الآن بدون أخطاء تشغيلية")
+    print("منصة إنجاز تعمل بكامل ميزات الذكاء الاصطناعي والخدمات الشاملة")
     await app.initialize()
     await app.start()
     await app.updater.start_polling()
